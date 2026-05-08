@@ -20,7 +20,7 @@ if not MODEL_PATH:
     default_model_dir = project_root / "models" / "Gemma"
     
     # Prefer Q4 version for speed/balance, fallback to any .gguf
-    default_model = default_model_dir / "gemma-4-E4B-it-UD-Q4_K_XL.gguf"
+    default_model = default_model_dir / "gemma-4-E4B-it-Q4_K_M.gguf"
     
     if default_model.exists():
         MODEL_PATH = str(default_model)

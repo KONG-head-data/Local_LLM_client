@@ -21,6 +21,11 @@ async def generate(request: GenerateRequest):
 
     start_time = time.perf_counter()
 
+    # Ensure response_format is valid for llama-cpp-python
+    response_format = request.response_format
+    if response_format is not None and "type" not in response_format:
+        response_format = None
+
     def run_inference():
         return llm.create_completion(
             prompt=request.prompt,
@@ -28,7 +33,7 @@ async def generate(request: GenerateRequest):
             temperature=request.temperature,
             top_p=request.top_p,
             stream=request.stream,
-            response_format=request.response_format
+            response_format=response_format
         )
 
     if request.stream:
@@ -71,6 +76,11 @@ async def chat(request: ChatRequest):
 
     start_time = time.perf_counter()
 
+    # Ensure response_format is valid for llama-cpp-python
+    response_format = request.response_format
+    if response_format is not None and "type" not in response_format:
+        response_format = None
+
     # Convert Pydantic messages to list of dicts for llama-cpp-python
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
@@ -81,7 +91,7 @@ async def chat(request: ChatRequest):
             temperature=request.temperature,
             top_p=request.top_p,
             stream=request.stream,
-            response_format=request.response_format
+            response_format=response_format
         )
 
     if request.stream:
