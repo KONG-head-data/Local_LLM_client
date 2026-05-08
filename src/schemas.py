@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
 
 class GenerateRequest(BaseModel):
@@ -7,6 +7,7 @@ class GenerateRequest(BaseModel):
     top_p: float = 0.95
     max_tokens: int = 512
     stream: bool = False
+    response_format: Optional[Dict[str, Any]] = None # Support for {"type": "json_object"}
 
 
 class ChatMessage(BaseModel):
@@ -20,3 +21,4 @@ class ChatRequest(BaseModel):
     top_p: float = 0.95
     max_tokens: int = 512
     stream: bool = False
+    response_format: Optional[Dict[str, Any]] = None
