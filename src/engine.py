@@ -1,5 +1,5 @@
 from llama_cpp import Llama
-from .config import MODEL_PATH
+from .config import MODEL_PATH, logger
 
 # Initialize Llama Engine (lazy load)
 _engine = None
@@ -8,8 +8,10 @@ def get_engine():
     global _engine
     if _engine is None:
         if not MODEL_PATH:
+            logger.error("MODEL_PATH environment variable must be set to the GGUF file path.")
             raise RuntimeError("MODEL_PATH environment variable must be set to the GGUF file path.")
         
+        logger.info(f"Loading model from: {MODEL_PATH}")
         # Initialize llama-cpp-python
         _engine = Llama(
             model_path=MODEL_PATH,
@@ -18,4 +20,5 @@ def get_engine():
             flash_attn=True,      # Enable Flash Attention
             verbose=False         # Set to True for debugging
         )
+        logger.info("Model loaded successfully.")
     return _engine
