@@ -1,7 +1,7 @@
-from vllm import AsyncLLMEngine, AsyncEngineArgs
+from llama_cpp import Llama
 from .config import MODEL_PATH
 
-# Initialize vLLM Engine (lazy load if possible or handle error)
+# Initialize Llama Engine (lazy load)
 _engine = None
 
 def get_engine():
@@ -10,12 +10,12 @@ def get_engine():
         if not MODEL_PATH:
             raise RuntimeError("MODEL_PATH environment variable must be set to the GGUF file path.")
         
-        engine_args = AsyncEngineArgs(
-            model=MODEL_PATH,
-            tokenizer=None, 
-            trust_remote_code=True,
-            gpu_memory_utilization=0.90,
-            max_model_len=4096,
+        # Initialize llama-cpp-python
+        _engine = Llama(
+            model_path=MODEL_PATH,
+            n_ctx=4096,           # Context window
+            n_gpu_layers=-1,      # Offload all layers to GPU (-1)
+            flash_attn=True,      # Enable Flash Attention
+            verbose=False         # Set to True for debugging
         )
-        _engine = AsyncLLMEngine.from_engine_args(engine_args)
     return _engine
