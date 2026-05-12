@@ -84,6 +84,8 @@ async def chat(request: ChatRequest):
     # Convert Pydantic messages to list of dicts for llama-cpp-python
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
+    logger.info(f"Chat Request: {request.format_for_log()}")
+
     def run_chat_inference():
         return llm.create_chat_completion(
             messages=messages,
@@ -121,6 +123,7 @@ async def chat(request: ChatRequest):
     throughput = token_count / duration if duration > 0 else 0
     
     logger.info(f"Chat generation finished. Throughput: {throughput:.2f} tokens/sec ({token_count} tokens in {duration:.2f}s)")
+    logger.info(f"Response content: {json.dumps(response['choices'], indent=2)}")
     
     return {
         "message": response['choices'][0]['message'],

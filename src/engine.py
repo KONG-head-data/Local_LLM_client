@@ -16,7 +16,7 @@ def get_engine():
         # Note: Reverted Q8 KV cache to default F16 due to CUDA SET_ROWS compatibility with Gemma 2
         _engine = Llama(
             model_path=MODEL_PATH,
-            n_ctx=8192,
+            n_ctx=32768,
             n_gpu_layers=-1,
             flash_attn=True,
             n_batch=512,           # Increased batch size for faster prompt processing
