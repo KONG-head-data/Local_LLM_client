@@ -9,6 +9,7 @@ class GenerateRequest(BaseModel):
     top_p: float = 0.95
     max_tokens: int = 512
     stream: bool = False
+    thinking: bool = False
     response_format: Optional[Dict[str, Any]] = None # Support for {"type": "json_object"}
 
 
@@ -23,6 +24,7 @@ class ChatRequest(BaseModel):
     top_p: float = 0.95
     max_tokens: int = 512
     stream: bool = False
+    thinking: bool = False
     response_format: Optional[Dict[str, Any]] = None
 
     def format_for_log(self) -> str:

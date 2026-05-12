@@ -26,9 +26,17 @@ async def generate(request: GenerateRequest):
     if response_format is not None and "type" not in response_format:
         response_format = None
 
+    prompt = request.prompt
+    if request.thinking:
+        if not prompt.startswith("<|think|>"):
+            prompt = f"<|think|>{prompt}"
+    else:
+        if prompt.startswith("<|think|>"):
+            prompt = prompt[len("<|think|>"):]
+
     def run_inference():
         return llm.create_completion(
-            prompt=request.prompt,
+            prompt=prompt,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
             top_p=request.top_p,
@@ -84,7 +92,19 @@ async def chat(request: ChatRequest):
     # Convert Pydantic messages to list of dicts for llama-cpp-python
     messages = [{"role": m.role, "content": m.content} for m in request.messages]
 
-    logger.info(f"Chat Request: {request.format_for_log()}")
+    if request.thinking:
+        system_msg = next((m for m in messages if m["role"] == "system"), None)
+        if system_msg:
+            if not system_msg["content"].startswith("<|think|>"):
+                system_msg["content"] = f"<|think|>{system_msg['content']}"
+        else:
+            messages.insert(0, {"role": "system", "content": "<|think|>"})
+    else:
+        system_msg = next((m for m in messages if m["role"] == "system"), None)
+        if system_msg and system_msg["content"].startswith("<|think|>"):
+            system_msg["content"] = system_msg["content"][len("<|think|>"):]
+
+    logger.info(f"Chat Request (thinking={request.thinking}): {request.format_for_log()}")
 
     def run_chat_inference():
         return llm.create_chat_completion(
