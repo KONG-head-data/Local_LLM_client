@@ -33,69 +33,40 @@ class ChatRequest(BaseModel):
 
     def format_for_log(self) -> str:
         formatted = ""
+        
+        # Log Tools if present
+        if self.tools:
+            formatted += "\n  AVAILABLE TOOLS:"
+            for tool in self.tools:
+                func = tool.get("function", {})
+                name = func.get("name", "unknown")
+                desc = func.get("description", "no description")
+                formatted += f"\n    - {name}: {desc}"
+        
         for msg in self.messages:
-            content = msg.content
-            if not isinstance(content, str):
-                content = json.dumps(content)
+            # Header
+            formatted += f"\n  {msg.role.upper()}: "
             
-            # Find and pretty-print JSON blocks
-            result_parts = []
-            pos = 0
-            
-            while pos < len(content):
-                start = content.find('{', pos)
-                if start == -1:
-                    result_parts.append(content[pos:])
-                    break
-                
-                # Append text before JSON
-                result_parts.append(content[pos:start])
-                
-                # Try to find matching brace
-                brace_count = 0
-                end = -1
-                for i in range(start, len(content)):
-                    if content[i] == '{':
-                        brace_count += 1
-                    elif content[i] == '}':
-                        brace_count -= 1
-                        if brace_count == 0:
-                            end = i + 1
-                            break
-                
-                if end != -1:
-                    candidate = content[start:end]
-                    try:
-                        data = json.loads(candidate)
-                        pretty = json.dumps(data, indent=2)
-                        result_parts.append("\n" + pretty + "\n")
-                        pos = end
-                    except json.JSONDecodeError:
-                        # Not JSON, append the '{' and move on
-                        result_parts.append('{')
-                        pos = start + 1
-                else:
-                    # No matching '}', append the rest
-                    result_parts.append(content[start:])
-                    break
-            
-            final_content = "".join(result_parts)
-            # Collapse multiple newlines into at most two
-            final_content = re.sub(r'\n{3,}', '\n\n', final_content)
-            
-            lines = final_content.splitlines()
-            if not lines:
-                formatted += f"\n  {msg.role.upper()}: "
-            else:
-                # Filter out empty lines at the very beginning
-                start_idx = 0
-                while start_idx < len(lines) and not lines[start_idx].strip():
-                    start_idx += 1
-                
-                if start_idx < len(lines):
-                    formatted += f"\n  {msg.role.upper()}: {lines[start_idx]}"
-                    for line in lines[start_idx+1:]:
+            # Content handling
+            if isinstance(msg.content, str):
+                content_lines = msg.content.splitlines()
+                if content_lines:
+                    formatted += content_lines[0]
+                    for line in content_lines[1:]:
                         formatted += f"\n    {line}"
                 else:
-                    formatted += f"\n  {msg.role.upper()}: "
+                    formatted += "(empty)"
+            else:
+                # Multimodal or complex content
+                formatted += json.dumps(msg.content, indent=2).replace("\n", "\n    ")
+
+            # Metadata (Tool calls/ID)
+            if msg.name:
+                formatted += f" [name={msg.name}]"
+            if msg.tool_call_id:
+                formatted += f" [id={msg.tool_call_id}]"
+            
+            if msg.tool_calls:
+                formatted += "\n    TOOL_CALLS: " + json.dumps(msg.tool_calls, indent=2).replace("\n", "\n    ")
+                
         return formatted

@@ -60,7 +60,7 @@ async def generate(request: GenerateRequest):
             end_time = time.perf_counter()
             duration = end_time - start_time
             throughput = token_count / duration if duration > 0 else 0
-            logger.info(f"Stream finished. Throughput: {throughput:.2f} tokens/sec ({token_count} tokens in {duration:.2f}s)")
+            logger.info(f"Stream finished. Throughput: {throughput:.2f} tokens/sec (Total: {token_count} tokens in {duration:.2f}s)")
 
         return StreamingResponse(async_stream_results(), media_type="text/plain")
 
@@ -73,7 +73,7 @@ async def generate(request: GenerateRequest):
     token_count = response['usage']['completion_tokens']
     throughput = token_count / duration if duration > 0 else 0
     
-    logger.info(f"Generation finished. Throughput: {throughput:.2f} tokens/sec ({token_count} tokens in {duration:.2f}s)")
+    logger.info(f"Generation finished. Throughput: {throughput:.2f} tokens/sec (Total: {token_count} tokens in {duration:.2f}s)")
     logger.info(f"Response Content: {text[:500]}{'...' if len(text) > 500 else ''}")
     
     return {"text": text, "usage": response['usage']}
@@ -104,13 +104,10 @@ async def chat(request: ChatRequest):
 
     logger.info(f"Chat Request (thinking={request.thinking}): {request.format_for_log()}")
 
-    # For streaming with auto-tools, we first run without streaming to detect tools
-    # If tools are detected, we loop. Once we have a final answer text, we could stream it,
-    # but for simplicity in this agentic version, we'll disable streaming if tools are involved.
-    
     async def run_agentic_inference(msgs):
         current_messages = list(msgs)
         max_iterations = 5
+        total_tokens = 0
         
         for i in range(max_iterations):
             # Step 1: Run LLM
@@ -159,6 +156,7 @@ async def chat(request: ChatRequest):
                     )
 
             response = await anyio.to_thread.run_sync(inference_step)
+            total_tokens += response['usage']['completion_tokens']
             
             # Step 2: Parse response
             choice = response['choices'][0]
@@ -172,25 +170,18 @@ async def chat(request: ChatRequest):
             
             if not tool_calls:
                 # No more tools, this is the final answer
-                return response, current_messages
+                return response, current_messages, total_tokens
             
             logger.info(f"Agent Iteration {i+1}: Model requested {len(tool_calls)} tool(s).")
             
             # Step 4: Execute tools and update conversation
-            # We add the model's message with tool calls first
             current_messages.append({"role": "assistant", "content": content})
             
             for call_str in tool_calls:
-                # Extract function name for matching (e.g. call:name{...})
                 try:
                     func_name = call_str.split("{")[0].replace("call:", "").strip()
                     tool_result = execute_tool(call_str)
-                    
-                    # Generate a fake tool_call_id for the history consistency
                     tid = f"auto_call_{time.time()}"
-                    
-                    # Update tool_calls list in the last assistant message if using structured format
-                    # But here we just append the 'tool' role message
                     current_messages.append({
                         "role": "tool",
                         "name": func_name,
@@ -201,15 +192,12 @@ async def chat(request: ChatRequest):
                 except Exception as e:
                     logger.error(f"Error processing tool call: {e}")
             
-            # Model will run again in next iteration with the new tool results
-            
-        return response, current_messages
+        return response, current_messages, total_tokens
 
     if request.stream and not request.tools:
         # Standard streaming for non-tool requests
         async def async_chat_stream():
             def run_chat_inference():
-                # Re-using the logic from previous version for simple stream
                 if chat_template:
                     env = jinja2.Environment(loader=jinja2.BaseLoader())
                     template = env.from_string(chat_template)
@@ -229,12 +217,16 @@ async def chat(request: ChatRequest):
                     if content:
                         token_count += 1
                         yield content
-            logger.info(f"Chat stream finished. {token_count} tokens.")
+            
+            end_time = time.perf_counter()
+            duration = end_time - start_time
+            throughput = token_count / duration if duration > 0 else 0
+            logger.info(f"Chat stream finished. Throughput: {throughput:.2f} tokens/sec (Total: {token_count} tokens in {duration:.2f}s)")
 
         return StreamingResponse(async_chat_stream(), media_type="text/plain")
 
     # Agentic Loop (Non-streaming or Tool-enabled)
-    response, final_history = await run_agentic_inference(messages)
+    response, final_history, total_tokens = await run_agentic_inference(messages)
     end_time = time.perf_counter()
     duration = end_time - start_time
     
@@ -244,16 +236,14 @@ async def chat(request: ChatRequest):
     else:
         message = {"role": "assistant", "content": choice.get('text', '')}
     
-    usage = response['usage']
-    token_count = usage['completion_tokens']
-    throughput = token_count / duration if duration > 0 else 0
+    throughput = total_tokens / duration if duration > 0 else 0
     
-    logger.info(f"Chat agent finished. Throughput: {throughput:.2f} tokens/sec")
-    logger.info(f"Final Response: {json.dumps(message, indent=2)}")
+    logger.info(f"Chat agent finished. Throughput: {throughput:.2f} tokens/sec (Total: {total_tokens} tokens in {duration:.2f}s)")
+    logger.info(f"Chat Response: {json.dumps(message, indent=2)}")
     
     return {
         "message": message,
-        "usage": usage,
+        "usage": response['usage'],
         "history": final_history if len(final_history) > len(messages) else None
     }
 
