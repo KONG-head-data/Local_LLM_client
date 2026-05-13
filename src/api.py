@@ -7,52 +7,24 @@ import jinja2
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
-from .engine import get_engine, get_chat_template
+from pathlib import Path
+from .engine import get_engine
 from .schemas import GenerateRequest, ChatRequest
 from .tools import execute_tool, AVAILABLE_TOOLS
-from .config import logger
+from .config import logger, MODEL_TYPE
+from .services import ServiceFactory
 
 router = APIRouter()
 
+# Initialize service based on model type
+project_root = str(Path(__file__).parent.parent)
+service = ServiceFactory.get_service(MODEL_TYPE, project_root)
+
 def format_response_for_log(content: str) -> Dict[str, Any]:
     """
-    Parses a raw Gemma 4 response string into a clean JSON structure for logging.
+    Parses a raw response string into a clean JSON structure for logging using the service.
     """
-    # 1. Extract Thinking
-    thinking = ""
-    channel_match = re.search(r'<\|channel>thought\n(.*?)<channel|>', content, re.DOTALL)
-    if channel_match:
-        thinking = channel_match.group(1).strip()
-    
-    # 2. Extract Tool Calls
-    tool_calls = []
-    tc_matches = re.findall(r'<\|tool_call\|?>(.*?)<tool_call\|>', content, re.DOTALL)
-    for tc in tc_matches:
-        try:
-            name = tc.split("{")[0].replace("call:", "").strip()
-            args_str = tc[tc.find("{"):]
-            args_str = args_str.replace('<|\"|>', '"')
-            
-            try:
-                json_safe = re.sub(r'(\w+):', r'"\1":', args_str)
-                args = json.loads(json_safe)
-            except:
-                args = args_str
-                
-            tool_calls.append({"name": name, "arguments": args})
-        except:
-            tool_calls.append({"raw": tc})
-
-    # 3. Extract Final Content
-    clean_content = content
-    clean_content = re.sub(r'<\|channel>.*?<channel|>', '', clean_content, flags=re.DOTALL)
-    clean_content = re.sub(r'<\|tool_call\|?>(.*?)<tool_call\|>', '', clean_content, flags=re.DOTALL).strip()
-
-    return {
-        "thinking": thinking if thinking else None,
-        "tool_calls": tool_calls if tool_calls else None,
-        "content": clean_content if clean_content else None
-    }
+    return service.parse_response(content)
 
 @router.post("/generate")
 async def generate(request: GenerateRequest):
@@ -66,8 +38,11 @@ async def generate(request: GenerateRequest):
 
     def run_inference():
         prompt = request.prompt
-        if request.thinking and not prompt.startswith("<|think|>"):
+        # For simple generate, we still do basic formatting if requested
+        if request.thinking and not prompt.startswith("<|think|>") and MODEL_TYPE == "gemma":
             prompt = f"<|think|>{prompt}"
+        elif request.thinking and not prompt.startswith("<think>") and MODEL_TYPE == "qwen":
+            prompt = f"<think>{prompt}"
         
         if prompt.startswith("<bos>"):
             prompt = prompt.replace("<bos>", "", 1)
@@ -86,7 +61,8 @@ async def generate(request: GenerateRequest):
             temperature=request.temperature,
             top_p=request.top_p,
             stream=request.stream,
-            grammar=grammar
+            grammar=grammar,
+            stop=service.get_stop_tokens()
         )
 
     if request.stream:
@@ -122,7 +98,6 @@ async def generate(request: GenerateRequest):
 async def chat(request: ChatRequest):
     try:
         llm = get_engine()
-        chat_template = get_chat_template()
     except Exception as e:
         logger.error(f"Failed to get engine: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -140,116 +115,62 @@ async def chat(request: ChatRequest):
 
     logger.info(f"Chat Request (thinking={request.thinking}): {request.format_for_log()}")
 
-    async def run_agentic_inference(msgs):
-        current_messages = list(msgs)
-        max_iterations = 5
-        total_tokens = 0
-        
-        for i in range(max_iterations):
-            def inference_step():
-                if chat_template:
-                    env = jinja2.Environment(loader=jinja2.BaseLoader())
-                    template = env.from_string(chat_template)
-                    bos_token = "<bos>"
-                    try: bos_token = llm.token_get_text(llm.token_bos()).decode('utf-8')
-                    except: pass
-
-                    prompt = template.render(
-                        messages=current_messages,
-                        bos_token=bos_token,
-                        add_generation_prompt=True,
-                        enable_thinking=request.thinking,
-                        tools=request.tools or []
-                    )
-                    
-                    if prompt.startswith("<bos>"):
-                        prompt = prompt.replace("<bos>", "", 1)
-                    
-                    grammar = None
-                    if request.response_format and request.response_format.get("type") == "json_object":
-                        try:
-                            from llama_cpp.llama_chat_format import _grammar_for_response_format
-                            grammar = _grammar_for_response_format(request.response_format)
-                        except: pass
-
-                    return llm.create_completion(
-                        prompt=prompt,
-                        max_tokens=request.max_tokens,
-                        temperature=request.temperature,
-                        top_p=request.top_p,
-                        grammar=grammar,
-                        stop=["<end_of_turn>", "<turn|>"] 
-                    )
-                else:
-                    return llm.create_chat_completion(
-                        messages=current_messages,
-                        tools=request.tools,
-                        max_tokens=request.max_tokens,
-                        temperature=request.temperature,
-                        top_p=request.top_p,
-                        response_format=request.response_format
-                    )
-
-            response = await anyio.to_thread.run_sync(inference_step)
-            total_tokens += response['usage']['completion_tokens']
-            choice = response['choices'][0]
-            content = choice['message'].get('content', '') if 'message' in choice else choice.get('text', '')
+    async def run_single_inference(msgs):
+        def inference_step():
+            prompt = service.render_prompt(
+                messages=msgs,
+                tools=request.tools or [],
+                enable_thinking=request.thinking
+            )
             
-            tool_calls = re.findall(r'<\|tool_call\|>(.*?)<tool_call\|>', content, re.DOTALL)
-            
-            if not tool_calls:
-                return response, current_messages, total_tokens
-            
-            logger.info(f"Agent Iteration {i+1}: Model requested {len(tool_calls)} tool(s).")
-            current_messages.append({"role": "assistant", "content": content})
-            
-            for call_str in tool_calls:
+            grammar = None
+            if request.response_format and request.response_format.get("type") == "json_object":
                 try:
-                    func_name = call_str.split("{")[0].replace("call:", "").strip()
-                    tool_result = execute_tool(call_str)
-                    tid = f"auto_call_{time.time()}"
-                    current_messages.append({
-                        "role": "tool",
-                        "name": func_name,
-                        "tool_call_id": tid,
-                        "content": tool_result
-                    })
-                    logger.info(f"Tool '{func_name}' executed. Result: {tool_result[:100]}...")
-                except Exception as e:
-                    logger.error(f"Error processing tool call: {e}")
-            
-        return response, current_messages, total_tokens
+                    from llama_cpp.llama_chat_format import _grammar_for_response_format
+                    grammar = _grammar_for_response_format(request.response_format)
+                except: pass
+
+            return llm.create_completion(
+                prompt=prompt,
+                max_tokens=request.max_tokens,
+                temperature=request.temperature,
+                top_p=request.top_p,
+                grammar=grammar,
+                stop=service.get_stop_tokens()
+            )
+
+        response = await anyio.to_thread.run_sync(inference_step)
+        content = response['choices'][0].get('text', '')
+        # Update response to include message-like structure for consistency
+        response['choices'][0]['message'] = {"role": "assistant", "content": content}
+        
+        return response
 
     if request.stream and not request.tools:
+        # ... (rest of stream logic)
         async def async_chat_stream():
             def run_chat_inference():
-                if chat_template:
-                    env = jinja2.Environment(loader=jinja2.BaseLoader())
-                    template = env.from_string(chat_template)
-                    bos_token = "<bos>"
-                    try: bos_token = llm.token_get_text(llm.token_bos()).decode('utf-8')
-                    except: pass
-                    prompt = template.render(messages=messages, bos_token=bos_token, add_generation_prompt=True, enable_thinking=request.thinking, tools=[])
-                    
-                    if prompt.startswith("<bos>"):
-                        prompt = prompt.replace("<bos>", "", 1)
+                prompt = service.render_prompt(
+                    messages=messages,
+                    tools=[],
+                    enable_thinking=request.thinking
+                )
 
-                    return llm.create_completion(
-                        prompt=prompt, 
-                        max_tokens=request.max_tokens, 
-                        temperature=request.temperature, 
-                        top_p=request.top_p, 
-                        stream=True, 
-                        stop=["<end_of_turn>", "<turn|>"]
-                    )
-                return llm.create_chat_completion(messages=messages, max_tokens=request.max_tokens, temperature=request.temperature, top_p=request.top_p, stream=True)
+                return llm.create_completion(
+                    prompt=prompt, 
+                    max_tokens=request.max_tokens, 
+                    temperature=request.temperature, 
+                    top_p=request.top_p, 
+                    stream=True, 
+                    stop=service.get_stop_tokens()
+                )
 
             token_count = 0
             gen = await anyio.to_thread.run_sync(run_chat_inference)
             for chunk in gen:
                 if 'choices' in chunk and len(chunk['choices']) > 0:
                     choice = chunk['choices'][0]
-                    content = choice['delta'].get('content', '') if 'delta' in choice else choice.get('text', '')
+                    content = choice.get('text', '')
                     if content:
                         token_count += 1
                         yield content
@@ -260,23 +181,42 @@ async def chat(request: ChatRequest):
 
         return StreamingResponse(async_chat_stream(), media_type="text/plain")
 
-    response, final_history, total_tokens = await run_agentic_inference(messages)
+    response = await run_single_inference(messages)
     duration = time.perf_counter() - start_time
     choice = response['choices'][0]
-    content = choice['message'].get('content', '') if 'message' in choice else choice.get('text', '')
+    content = choice['message']['content']
+    total_tokens = response['usage']['completion_tokens']
     
-    # Log the response in a clean, parsed JSON format
-    log_data = {"role": "assistant"}
-    log_data.update(format_response_for_log(content))
-    logger.info(f"Chat Response: {json.dumps(log_data, indent=2)}")
-
+    # Parse the response for structured logging and output
+    parsed_response = service.parse_response(content)
+    
+    # Construct a clean log object
     throughput = total_tokens / duration if duration > 0 else 0
-    logger.info(f"Chat agent finished. Throughput: {throughput:.2f} tokens/sec (Total: {total_tokens} tokens in {duration:.2f}s)")
+    log_data = {
+        "metrics": {
+            "duration_s": round(duration, 2),
+            "throughput_tps": round(throughput, 2),
+            "total_tokens": total_tokens
+        },
+        "usage": response['usage'],
+        "response": {
+            "role": "assistant",
+            "thinking": parsed_response.get("thinking"),
+            "tool_calls": parsed_response.get("tool_calls"),
+            "content": parsed_response.get("content")
+        }
+    }
+    
+    logger.info(f"Completion result:\n{json.dumps(log_data, indent=2)}")
 
     return {
-        "message": {"role": "assistant", "content": content},
+        "message": {
+            "role": "assistant", 
+            "content": content,
+            "parsed": parsed_response
+        },
         "usage": response['usage'],
-        "history": final_history if len(final_history) > len(messages) else None
+        "metrics": log_data["metrics"]
     }
 
 

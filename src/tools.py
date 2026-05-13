@@ -1,5 +1,5 @@
 import json
-from typing import Dict, Any, Callable
+from typing import Dict, Any, Callable, Union
 
 # Dictionary to store executable functions
 AVAILABLE_TOOLS: Dict[str, Callable] = {}
@@ -30,41 +30,49 @@ def calculate_sum(a: int, b: int):
     """A simple tool to add two numbers."""
     return a + b
 
-def execute_tool(tool_call_str: str) -> str:
+def execute_tool(tool_call: Union[str, Dict[str, Any]]) -> str:
     """
-    Parses a tool call string and executes it.
-    Expected format: call:function_name{arg1:val1, arg2:val2}
+    Parses a tool call (string or dict) and executes it.
+    If string, expected format: call:function_name{arg1:val1, arg2:val2}
+    If dict, expected keys: 'name' and 'arguments'
     """
     try:
-        call_part = tool_call_str.replace("call:", "").strip()
-        
-        name, args_str = call_part.split("{", 1)
-        name = name.strip()
-        
-        args_str = args_str.rstrip("}").strip()
-        
-        args = {}
-        if args_str:
-            try:
-                # Attempt to convert to JSON-like string if not already
-                # Gemma template often outputs key:val instead of "key":"val"
-                cleaned_args = ""
-                for part in args_str.split(","):
-                    if ":" in part:
-                        k, v = part.split(":", 1)
-                        cleaned_args += f'"{k.strip()}":"{v.strip()}",'
-                
-                if cleaned_args:
-                    args = json.loads("{" + cleaned_args.rstrip(",") + "}")
-                else:
-                    args = json.loads("{" + args_str + "}")
-            except:
-                # Manual split as fallback
-                parts = args_str.split(",")
-                for p in parts:
-                    if ":" in p:
-                        k, v = p.split(":", 1)
-                        args[k.strip().replace('"', "").replace("'", "")] = v.strip().replace('"', "").replace("'", "")
+        if isinstance(tool_call, dict):
+            name = tool_call.get("name")
+            args = tool_call.get("arguments", {})
+        else:
+            call_part = tool_call.replace("call:", "").strip()
+            
+            name, args_str = call_part.split("{", 1)
+            name = name.strip()
+            
+            args_str = args_str.rstrip("}").strip()
+            
+            args = {}
+            if args_str:
+                try:
+                    # Attempt to convert to JSON-like string if not already
+                    # Gemma template often outputs key:val instead of "key":"val"
+                    cleaned_args = ""
+                    for part in args_str.split(","):
+                        if ":" in part:
+                            k, v = part.split(":", 1)
+                            # Handle potential quotes
+                            k = k.strip().strip('"').strip("'")
+                            v = v.strip().strip('"').strip("'")
+                            cleaned_args += f'"{k}":"{v}",'
+                    
+                    if cleaned_args:
+                        args = json.loads("{" + cleaned_args.rstrip(",") + "}")
+                    else:
+                        args = json.loads("{" + args_str + "}")
+                except:
+                    # Manual split as fallback
+                    parts = args_str.split(",")
+                    for p in parts:
+                        if ":" in p:
+                            k, v = p.split(":", 1)
+                            args[k.strip().replace('"', "").replace("'", "")] = v.strip().replace('"', "").replace("'", "")
 
         if name in AVAILABLE_TOOLS:
             # Type conversion attempt for common types

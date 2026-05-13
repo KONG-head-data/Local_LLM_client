@@ -13,6 +13,16 @@ logger.add(
 # Configuration via environment variables
 MODEL_PATH = os.getenv("MODEL_PATH")
 
+def get_model_type(path: str) -> str:
+    if not path:
+        return "unknown"
+    filename = Path(path).name.lower()
+    if "gemma" in filename:
+        return "gemma"
+    if "qwen" in filename:
+        return "qwen"
+    return "unknown"
+
 # Default model discovery
 if not MODEL_PATH:
     # Try to find a default model in the models/Gemma directory
@@ -27,3 +37,6 @@ if not MODEL_PATH:
         logger.info(f"Using default model: {MODEL_PATH}")
     else:
         logger.warning("MODEL_PATH not set and no default model found in models/Gemma/")
+
+MODEL_TYPE = get_model_type(MODEL_PATH)
+logger.info(f"Detected model type: {MODEL_TYPE}")
