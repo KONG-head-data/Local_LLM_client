@@ -10,4 +10,5 @@ dependencies = [
     "uvicorn",
     "pydantic",
     "loguru>=0.7.3",
+    "requests>=2.34.0",
 ]

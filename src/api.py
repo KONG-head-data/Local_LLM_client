@@ -68,12 +68,14 @@ async def generate(request: GenerateRequest):
     end_time = time.perf_counter()
     
     duration = end_time - start_time
+    text = response['choices'][0]['text']
     token_count = response['usage']['completion_tokens']
     throughput = token_count / duration if duration > 0 else 0
     
     logger.info(f"Generation finished. Throughput: {throughput:.2f} tokens/sec ({token_count} tokens in {duration:.2f}s)")
+    logger.info(f"Response Content: {text[:500]}{'...' if len(text) > 500 else ''}")
     
-    return {"text": response['choices'][0]['text'], "usage": response['usage']}
+    return {"text": text, "usage": response['usage']}
 
 
 @router.post("/chat")
@@ -88,7 +90,16 @@ async def chat(request: ChatRequest):
     start_time = time.perf_counter()
 
     # Convert Pydantic messages to list of dicts
-    messages = [{"role": m.role, "content": m.content} for m in request.messages]
+    messages = []
+    for m in request.messages:
+        msg_dict = {"role": m.role, "content": m.content}
+        if m.tool_calls:
+            msg_dict["tool_calls"] = m.tool_calls
+        if m.tool_call_id:
+            msg_dict["tool_call_id"] = m.tool_call_id
+        if m.name:
+            msg_dict["name"] = m.name
+        messages.append(msg_dict)
 
     logger.info(f"Chat Request (thinking={request.thinking}): {request.format_for_log()}")
 
@@ -111,7 +122,7 @@ async def chat(request: ChatRequest):
                     bos_token=bos_token,
                     add_generation_prompt=True,
                     enable_thinking=request.thinking,
-                    tools=[]
+                    tools=request.tools or []
                 )
                 
                 # Manual grammar for response_format
@@ -138,9 +149,9 @@ async def chat(request: ChatRequest):
                 # Fallback handled below
         
         # Default chat completion if no template or rendering failed
-        # Note: llama-cpp-python's create_chat_completion internally handles response_format
         return llm.create_chat_completion(
             messages=messages,
+            tools=request.tools,
             max_tokens=request.max_tokens,
             temperature=request.temperature,
             top_p=request.top_p,
@@ -153,7 +164,6 @@ async def chat(request: ChatRequest):
             token_count = 0
             gen = await anyio.to_thread.run_sync(run_chat_inference)
             
-            # Use a simple flag to detect the type of chunk returned
             for chunk in gen:
                 if 'choices' in chunk and len(chunk['choices']) > 0:
                     choice = chunk['choices'][0]
@@ -192,6 +202,7 @@ async def chat(request: ChatRequest):
     throughput = token_count / duration if duration > 0 else 0
     
     logger.info(f"Chat generation finished. Throughput: {throughput:.2f} tokens/sec ({token_count} tokens in {duration:.2f}s)")
+    logger.info(f"Chat Response: {json.dumps(message, indent=2)}")
     
     return {
         "message": message,

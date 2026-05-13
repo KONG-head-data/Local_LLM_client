@@ -1,6 +1,6 @@
 import json
 import re
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Union
 from pydantic import BaseModel
 
 class GenerateRequest(BaseModel):
@@ -10,16 +10,20 @@ class GenerateRequest(BaseModel):
     max_tokens: int = 512
     stream: bool = False
     thinking: bool = False
-    response_format: Optional[Dict[str, Any]] = None # Support for {"type": "json_object"}
+    response_format: Optional[Dict[str, Any]] = None
 
 
 class ChatMessage(BaseModel):
     role: str
-    content: str
+    content: Union[str, List[Dict[str, Any]]] # Support for multimodal content parts
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    tool_call_id: Optional[str] = None
+    name: Optional[str] = None # For tool response role
 
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
+    tools: Optional[List[Dict[str, Any]]] = None # OpenAI-style tool definitions
     temperature: float = 0.7
     top_p: float = 0.95
     max_tokens: int = 512
@@ -31,6 +35,8 @@ class ChatRequest(BaseModel):
         formatted = ""
         for msg in self.messages:
             content = msg.content
+            if not isinstance(content, str):
+                content = json.dumps(content)
             
             # Find and pretty-print JSON blocks
             result_parts = []
