@@ -32,41 +32,43 @@ class ChatRequest(BaseModel):
     response_format: Optional[Dict[str, Any]] = None
 
     def format_for_log(self) -> str:
-        formatted = ""
-        
-        # Log Tools if present
-        if self.tools:
-            formatted += "\n  AVAILABLE TOOLS:"
-            for tool in self.tools:
-                func = tool.get("function", {})
-                name = func.get("name", "unknown")
-                desc = func.get("description", "no description")
-                formatted += f"\n    - {name}: {desc}"
-        
-        for msg in self.messages:
-            # Header
-            formatted += f"\n  {msg.role.upper()}: "
-            
-            # Content handling
-            if isinstance(msg.content, str):
-                content_lines = msg.content.splitlines()
-                if content_lines:
-                    formatted += content_lines[0]
-                    for line in content_lines[1:]:
-                        formatted += f"\n    {line}"
-                else:
-                    formatted += "(empty)"
-            else:
-                # Multimodal or complex content
-                formatted += json.dumps(msg.content, indent=2).replace("\n", "\n    ")
+        def indent(text, spaces):
+            return "\n".join(" " * spaces + line for line in text.splitlines())
 
-            # Metadata (Tool calls/ID)
-            if msg.name:
-                formatted += f" [name={msg.name}]"
-            if msg.tool_call_id:
-                formatted += f" [id={msg.tool_call_id}]"
-            
-            if msg.tool_calls:
-                formatted += "\n    TOOL_CALLS: " + json.dumps(msg.tool_calls, indent=2).replace("\n", "\n    ")
-                
-        return formatted
+        # Format Messages
+        msg_list = []
+        for msg in self.messages:
+            content_val = f'"{msg.content}"' if isinstance(msg.content, str) else json.dumps(msg.content, indent=12).strip()
+            m = (
+                f"ChatMessage(\n"
+                f'    role="{msg.role}",\n'
+                f'    content={content_val},\n'
+                f'    tool_calls={msg.tool_calls},\n'
+                f'    tool_call_id={msg.tool_call_id},\n'
+                f'    name={msg.name},\n'
+                f")"
+            )
+            msg_list.append(indent(m, 8).strip())
+        
+        messages_str = "[\n        " + ",\n        ".join(msg_list) + "\n    ]"
+
+        # Format Tools
+        if self.tools:
+            tools_json = json.dumps(self.tools, indent=4)
+            tools_str = indent(tools_json, 4).strip()
+        else:
+            tools_str = "None"
+
+        # Assemble Final Output
+        return (
+            f"ChatRequest(\n"
+            f"    thinking={self.thinking},\n"
+            f"    messages={messages_str},\n"
+            f"    tools={tools_str},\n"
+            f"    temperature={self.temperature},\n"
+            f"    top_p={self.top_p},\n"
+            f"    max_tokens={self.max_tokens},\n"
+            f"    stream={self.stream},\n"
+            f"    response_format={self.response_format},\n"
+            f")"
+        )

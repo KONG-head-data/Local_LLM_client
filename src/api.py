@@ -14,6 +14,46 @@ from .config import logger
 
 router = APIRouter()
 
+def format_response_for_log(content: str) -> Dict[str, Any]:
+    """
+    Parses a raw Gemma 4 response string into a clean JSON structure for logging.
+    """
+    # 1. Extract Thinking
+    thinking = ""
+    channel_match = re.search(r'<\|channel>thought\n(.*?)<channel|>', content, re.DOTALL)
+    if channel_match:
+        thinking = channel_match.group(1).strip()
+    
+    # 2. Extract Tool Calls
+    tool_calls = []
+    tc_matches = re.findall(r'<\|tool_call\|?>(.*?)<tool_call\|>', content, re.DOTALL)
+    for tc in tc_matches:
+        try:
+            name = tc.split("{")[0].replace("call:", "").strip()
+            args_str = tc[tc.find("{"):]
+            args_str = args_str.replace('<|\"|>', '"')
+            
+            try:
+                json_safe = re.sub(r'(\w+):', r'"\1":', args_str)
+                args = json.loads(json_safe)
+            except:
+                args = args_str
+                
+            tool_calls.append({"name": name, "arguments": args})
+        except:
+            tool_calls.append({"raw": tc})
+
+    # 3. Extract Final Content
+    clean_content = content
+    clean_content = re.sub(r'<\|channel>.*?<channel|>', '', clean_content, flags=re.DOTALL)
+    clean_content = re.sub(r'<\|tool_call\|?>(.*?)<tool_call\|>', '', clean_content, flags=re.DOTALL).strip()
+
+    return {
+        "thinking": thinking if thinking else None,
+        "tool_calls": tool_calls if tool_calls else None,
+        "content": clean_content if clean_content else None
+    }
+
 @router.post("/generate")
 async def generate(request: GenerateRequest):
     try:
@@ -29,6 +69,9 @@ async def generate(request: GenerateRequest):
         if request.thinking and not prompt.startswith("<|think|>"):
             prompt = f"<|think|>{prompt}"
         
+        if prompt.startswith("<bos>"):
+            prompt = prompt.replace("<bos>", "", 1)
+
         grammar = None
         if request.response_format and request.response_format.get("type") == "json_object":
             try:
@@ -57,18 +100,14 @@ async def generate(request: GenerateRequest):
                         token_count += 1
                         yield text
             
-            end_time = time.perf_counter()
-            duration = end_time - start_time
+            duration = time.perf_counter() - start_time
             throughput = token_count / duration if duration > 0 else 0
             logger.info(f"Stream finished. Throughput: {throughput:.2f} tokens/sec (Total: {token_count} tokens in {duration:.2f}s)")
 
         return StreamingResponse(async_stream_results(), media_type="text/plain")
 
-    # Non-streaming
     response = await anyio.to_thread.run_sync(run_inference)
-    end_time = time.perf_counter()
-    
-    duration = end_time - start_time
+    duration = time.perf_counter() - start_time
     text = response['choices'][0]['text']
     token_count = response['usage']['completion_tokens']
     throughput = token_count / duration if duration > 0 else 0
@@ -94,12 +133,9 @@ async def chat(request: ChatRequest):
     messages = []
     for m in request.messages:
         msg_dict = {"role": m.role, "content": m.content}
-        if m.tool_calls:
-            msg_dict["tool_calls"] = m.tool_calls
-        if m.tool_call_id:
-            msg_dict["tool_call_id"] = m.tool_call_id
-        if m.name:
-            msg_dict["name"] = m.name
+        if m.tool_calls: msg_dict["tool_calls"] = m.tool_calls
+        if m.tool_call_id: msg_dict["tool_call_id"] = m.tool_call_id
+        if m.name: msg_dict["name"] = m.name
         messages.append(msg_dict)
 
     logger.info(f"Chat Request (thinking={request.thinking}): {request.format_for_log()}")
@@ -110,17 +146,13 @@ async def chat(request: ChatRequest):
         total_tokens = 0
         
         for i in range(max_iterations):
-            # Step 1: Run LLM
             def inference_step():
                 if chat_template:
                     env = jinja2.Environment(loader=jinja2.BaseLoader())
                     template = env.from_string(chat_template)
-                    
-                    bos_token = ""
-                    try:
-                        bos_token = llm.token_get_text(llm.token_bos()).decode('utf-8')
-                    except:
-                        pass
+                    bos_token = "<bos>"
+                    try: bos_token = llm.token_get_text(llm.token_bos()).decode('utf-8')
+                    except: pass
 
                     prompt = template.render(
                         messages=current_messages,
@@ -129,6 +161,9 @@ async def chat(request: ChatRequest):
                         enable_thinking=request.thinking,
                         tools=request.tools or []
                     )
+                    
+                    if prompt.startswith("<bos>"):
+                        prompt = prompt.replace("<bos>", "", 1)
                     
                     grammar = None
                     if request.response_format and request.response_format.get("type") == "json_object":
@@ -157,24 +192,15 @@ async def chat(request: ChatRequest):
 
             response = await anyio.to_thread.run_sync(inference_step)
             total_tokens += response['usage']['completion_tokens']
-            
-            # Step 2: Parse response
             choice = response['choices'][0]
-            if 'message' in choice:
-                content = choice['message'].get('content', '')
-            else:
-                content = choice.get('text', '')
+            content = choice['message'].get('content', '') if 'message' in choice else choice.get('text', '')
             
-            # Step 3: Check for tool calls in the output text
             tool_calls = re.findall(r'<\|tool_call\|>(.*?)<tool_call\|>', content, re.DOTALL)
             
             if not tool_calls:
-                # No more tools, this is the final answer
                 return response, current_messages, total_tokens
             
             logger.info(f"Agent Iteration {i+1}: Model requested {len(tool_calls)} tool(s).")
-            
-            # Step 4: Execute tools and update conversation
             current_messages.append({"role": "assistant", "content": content})
             
             for call_str in tool_calls:
@@ -195,17 +221,27 @@ async def chat(request: ChatRequest):
         return response, current_messages, total_tokens
 
     if request.stream and not request.tools:
-        # Standard streaming for non-tool requests
         async def async_chat_stream():
             def run_chat_inference():
                 if chat_template:
                     env = jinja2.Environment(loader=jinja2.BaseLoader())
                     template = env.from_string(chat_template)
-                    bos_token = ""
+                    bos_token = "<bos>"
                     try: bos_token = llm.token_get_text(llm.token_bos()).decode('utf-8')
                     except: pass
                     prompt = template.render(messages=messages, bos_token=bos_token, add_generation_prompt=True, enable_thinking=request.thinking, tools=[])
-                    return llm.create_completion(prompt=prompt, max_tokens=request.max_tokens, temperature=request.temperature, top_p=request.top_p, stream=True, stop=["<end_of_turn>", "<turn|>"])
+                    
+                    if prompt.startswith("<bos>"):
+                        prompt = prompt.replace("<bos>", "", 1)
+
+                    return llm.create_completion(
+                        prompt=prompt, 
+                        max_tokens=request.max_tokens, 
+                        temperature=request.temperature, 
+                        top_p=request.top_p, 
+                        stream=True, 
+                        stop=["<end_of_turn>", "<turn|>"]
+                    )
                 return llm.create_chat_completion(messages=messages, max_tokens=request.max_tokens, temperature=request.temperature, top_p=request.top_p, stream=True)
 
             token_count = 0
@@ -218,31 +254,27 @@ async def chat(request: ChatRequest):
                         token_count += 1
                         yield content
             
-            end_time = time.perf_counter()
-            duration = end_time - start_time
+            duration = time.perf_counter() - start_time
             throughput = token_count / duration if duration > 0 else 0
             logger.info(f"Chat stream finished. Throughput: {throughput:.2f} tokens/sec (Total: {token_count} tokens in {duration:.2f}s)")
 
         return StreamingResponse(async_chat_stream(), media_type="text/plain")
 
-    # Agentic Loop (Non-streaming or Tool-enabled)
     response, final_history, total_tokens = await run_agentic_inference(messages)
-    end_time = time.perf_counter()
-    duration = end_time - start_time
-    
+    duration = time.perf_counter() - start_time
     choice = response['choices'][0]
-    if 'message' in choice:
-        message = choice['message']
-    else:
-        message = {"role": "assistant", "content": choice.get('text', '')}
+    content = choice['message'].get('content', '') if 'message' in choice else choice.get('text', '')
     
+    # Log the response in a clean, parsed JSON format
+    log_data = {"role": "assistant"}
+    log_data.update(format_response_for_log(content))
+    logger.info(f"Chat Response: {json.dumps(log_data, indent=2)}")
+
     throughput = total_tokens / duration if duration > 0 else 0
-    
     logger.info(f"Chat agent finished. Throughput: {throughput:.2f} tokens/sec (Total: {total_tokens} tokens in {duration:.2f}s)")
-    logger.info(f"Chat Response: {json.dumps(message, indent=2)}")
-    
+
     return {
-        "message": message,
+        "message": {"role": "assistant", "content": content},
         "usage": response['usage'],
         "history": final_history if len(final_history) > len(messages) else None
     }

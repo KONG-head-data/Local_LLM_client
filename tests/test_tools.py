@@ -41,7 +41,7 @@ def test_automatic_tool_execution():
     # Complex query requiring two tools
     payload = {
         "messages": [
-            {"role": "user", "content": "What is the weather on Mars and what is the current price of oil?"}
+            {"role": "user", "content": "What is the weather on Mars and what is the current price of NVDA stock?"}
         ],
         "tools": tools,
         "thinking": True,
