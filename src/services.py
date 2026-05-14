@@ -178,11 +178,11 @@ class GemmaService(BaseModelService):
         logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'parsed': parsed_response}, indent=2)}")
 
         return {
-            "message": {
-                "role": "assistant", 
-                "content": content,
-                "parsed": parsed_response
+            "raw_message": {
+                "role": "assistant",
+                "content": content
             },
+            "parsed_message": parsed_response,
             "usage": response['usage'],
             "metrics": metrics
         }
@@ -333,11 +333,11 @@ class QwenService(BaseModelService):
         logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'parsed': parsed_response}, indent=2)}")
 
         return {
-            "message": {
-                "role": "assistant", 
-                "content": content,
-                "parsed": parsed_response
+            "raw_message": {
+                "role": "assistant",
+                "content": content
             },
+            "parsed_message": parsed_response,
             "usage": response['usage'],
             "metrics": metrics
         }
