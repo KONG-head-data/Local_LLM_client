@@ -1,9 +1,15 @@
 import re
 import json
+import time
 import jinja2
+import anyio
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
-from .config import logger
+from typing import List, Dict, Any, Optional, AsyncGenerator, Union
+from fastapi.responses import StreamingResponse
+
+from .config import logger, MODEL_TYPE
+from .engine import get_engine
+from .schemas import ChatRequest
 
 class BaseModelService(ABC):
     @abstractmethod
@@ -16,6 +22,10 @@ class BaseModelService(ABC):
 
     @abstractmethod
     def get_stop_tokens(self) -> List[str]:
+        pass
+
+    @abstractmethod
+    async def chat(self, request: ChatRequest) -> Union[Dict[str, Any], StreamingResponse]:
         pass
 
 class GemmaService(BaseModelService):
@@ -85,6 +95,101 @@ class GemmaService(BaseModelService):
     def get_stop_tokens(self) -> List[str]:
         return ["<end_of_turn>", "<turn|>"]
 
+    async def chat(self, request: ChatRequest) -> Union[Dict[str, Any], StreamingResponse]:
+        llm = get_engine()
+        start_time = time.perf_counter()
+
+        messages = []
+        for m in request.messages:
+            msg_dict = {"role": m.role, "content": m.content}
+            if m.tool_calls: msg_dict["tool_calls"] = m.tool_calls
+            if m.tool_call_id: msg_dict["tool_call_id"] = m.tool_call_id
+            if m.name: msg_dict["name"] = m.name
+            messages.append(msg_dict)
+
+        async def run_single_inference(msgs):
+            def inference_step():
+                prompt = self.render_prompt(
+                    messages=msgs,
+                    tools=request.tools or [],
+                    enable_thinking=request.thinking
+                )
+                
+                grammar = None
+                if request.response_format and request.response_format.get("type") == "json_object":
+                    try:
+                        from llama_cpp.llama_chat_format import _grammar_for_response_format
+                        grammar = _grammar_for_response_format(request.response_format)
+                    except: pass
+
+                return llm.create_completion(
+                    prompt=prompt,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    grammar=grammar,
+                    stop=self.get_stop_tokens()
+                )
+
+            response = await anyio.to_thread.run_sync(inference_step)
+            return response
+
+        if request.stream and not request.tools:
+            async def async_chat_stream():
+                def run_chat_inference():
+                    prompt = self.render_prompt(
+                        messages=messages,
+                        tools=[],
+                        enable_thinking=request.thinking
+                    )
+                    return llm.create_completion(
+                        prompt=prompt, 
+                        max_tokens=request.max_tokens, 
+                        temperature=request.temperature, 
+                        top_p=request.top_p, 
+                        stream=True, 
+                        stop=self.get_stop_tokens()
+                    )
+
+                token_count = 0
+                gen = await anyio.to_thread.run_sync(run_chat_inference)
+                for chunk in gen:
+                    if 'choices' in chunk and len(chunk['choices']) > 0:
+                        content = chunk['choices'][0].get('text', '')
+                        if content:
+                            token_count += 1
+                            yield content
+                
+                duration = time.perf_counter() - start_time
+                throughput = token_count / duration if duration > 0 else 0
+                logger.info(f"Gemma chat stream finished. Throughput: {throughput:.2f} t/s")
+
+            return StreamingResponse(async_chat_stream(), media_type="text/plain")
+
+        response = await run_single_inference(messages)
+        duration = time.perf_counter() - start_time
+        content = response['choices'][0].get('text', '')
+        total_tokens = response['usage']['completion_tokens']
+        
+        parsed_response = self.parse_response(content)
+        throughput = total_tokens / duration if duration > 0 else 0
+        
+        logger.info(f"Gemma chat finished. Throughput: {throughput:.2f} t/s")
+
+        return {
+            "message": {
+                "role": "assistant", 
+                "content": content,
+                "parsed": parsed_response
+            },
+            "usage": response['usage'],
+            "metrics": {
+                "duration_s": round(duration, 2),
+                "throughput_tps": round(throughput, 2),
+                "total_tokens": total_tokens
+            }
+        }
+
 class QwenService(BaseModelService):
     def __init__(self, template_path: str):
         self.template_path = template_path
@@ -147,6 +252,101 @@ class QwenService(BaseModelService):
 
     def get_stop_tokens(self) -> List[str]:
         return ["<|im_end|>", "<|endoftext|>"]
+
+    async def chat(self, request: ChatRequest) -> Union[Dict[str, Any], StreamingResponse]:
+        llm = get_engine()
+        start_time = time.perf_counter()
+
+        messages = []
+        for m in request.messages:
+            msg_dict = {"role": m.role, "content": m.content}
+            if m.tool_calls: msg_dict["tool_calls"] = m.tool_calls
+            if m.tool_call_id: msg_dict["tool_call_id"] = m.tool_call_id
+            if m.name: msg_dict["name"] = m.name
+            messages.append(msg_dict)
+
+        async def run_single_inference(msgs):
+            def inference_step():
+                prompt = self.render_prompt(
+                    messages=msgs,
+                    tools=request.tools or [],
+                    enable_thinking=request.thinking
+                )
+                
+                grammar = None
+                if request.response_format and request.response_format.get("type") == "json_object":
+                    try:
+                        from llama_cpp.llama_chat_format import _grammar_for_response_format
+                        grammar = _grammar_for_response_format(request.response_format)
+                    except: pass
+
+                return llm.create_completion(
+                    prompt=prompt,
+                    max_tokens=request.max_tokens,
+                    temperature=request.temperature,
+                    top_p=request.top_p,
+                    grammar=grammar,
+                    stop=self.get_stop_tokens()
+                )
+
+            response = await anyio.to_thread.run_sync(inference_step)
+            return response
+
+        if request.stream and not request.tools:
+            async def async_chat_stream():
+                def run_chat_inference():
+                    prompt = self.render_prompt(
+                        messages=messages,
+                        tools=[],
+                        enable_thinking=request.thinking
+                    )
+                    return llm.create_completion(
+                        prompt=prompt, 
+                        max_tokens=request.max_tokens, 
+                        temperature=request.temperature, 
+                        top_p=request.top_p, 
+                        stream=True, 
+                        stop=self.get_stop_tokens()
+                    )
+
+                token_count = 0
+                gen = await anyio.to_thread.run_sync(run_chat_inference)
+                for chunk in gen:
+                    if 'choices' in chunk and len(chunk['choices']) > 0:
+                        content = chunk['choices'][0].get('text', '')
+                        if content:
+                            token_count += 1
+                            yield content
+                
+                duration = time.perf_counter() - start_time
+                throughput = token_count / duration if duration > 0 else 0
+                logger.info(f"Qwen chat stream finished. Throughput: {throughput:.2f} t/s")
+
+            return StreamingResponse(async_chat_stream(), media_type="text/plain")
+
+        response = await run_single_inference(messages)
+        duration = time.perf_counter() - start_time
+        content = response['choices'][0].get('text', '')
+        total_tokens = response['usage']['completion_tokens']
+        
+        parsed_response = self.parse_response(content)
+        throughput = total_tokens / duration if duration > 0 else 0
+        
+        logger.info(f"Qwen chat finished. Throughput: {throughput:.2f} t/s")
+
+        return {
+            "message": {
+                "role": "assistant", 
+                "content": content,
+                "parsed": parsed_response
+            },
+            "usage": response['usage'],
+            "metrics": {
+                "duration_s": round(duration, 2),
+                "throughput_tps": round(throughput, 2),
+                "total_tokens": total_tokens
+            }
+        }
 
 class ServiceFactory:
     @staticmethod
