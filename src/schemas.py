@@ -22,6 +22,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
+    system_prompt: Optional[str] = None
     tools: Optional[List[Dict[str, Any]]] = None # OpenAI-style tool definitions
     temperature: float = 0.7
     top_p: float = 0.95
@@ -60,6 +61,7 @@ class ChatRequest(BaseModel):
         # Assemble Final Output
         return (
             f"ChatRequest(\n"
+            f"    system_prompt={f'\"{self.system_prompt}\"' if self.system_prompt else 'None'},\n"
             f"    thinking={self.thinking},\n"
             f"    messages={messages_str},\n"
             f"    tools={tools_str},\n"

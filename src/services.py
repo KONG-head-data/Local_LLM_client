@@ -100,6 +100,9 @@ class GemmaService(BaseModelService):
         start_time = time.perf_counter()
 
         messages = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+            
         for m in request.messages:
             msg_dict = {"role": m.role, "content": m.content}
             if m.tool_calls: msg_dict["tool_calls"] = m.tool_calls
@@ -166,7 +169,13 @@ class GemmaService(BaseModelService):
         parsed_response = self.parse_response(content)
         throughput = total_tokens / duration if duration > 0 else 0
         
-        logger.info(f"Gemma chat finished. Throughput: {throughput:.2f} t/s")
+        metrics = {
+            "duration_s": round(duration, 2),
+            "throughput_tps": round(throughput, 2),
+            "total_tokens": total_tokens
+        }
+
+        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'parsed': parsed_response}, indent=2)}")
 
         return {
             "message": {
@@ -175,11 +184,7 @@ class GemmaService(BaseModelService):
                 "parsed": parsed_response
             },
             "usage": response['usage'],
-            "metrics": {
-                "duration_s": round(duration, 2),
-                "throughput_tps": round(throughput, 2),
-                "total_tokens": total_tokens
-            }
+            "metrics": metrics
         }
 
 class QwenService(BaseModelService):
@@ -250,6 +255,9 @@ class QwenService(BaseModelService):
         start_time = time.perf_counter()
 
         messages = []
+        if request.system_prompt:
+            messages.append({"role": "system", "content": request.system_prompt})
+            
         for m in request.messages:
             msg_dict = {"role": m.role, "content": m.content}
             if m.tool_calls: msg_dict["tool_calls"] = m.tool_calls
@@ -316,7 +324,13 @@ class QwenService(BaseModelService):
         parsed_response = self.parse_response(content)
         throughput = total_tokens / duration if duration > 0 else 0
         
-        logger.info(f"Qwen chat finished. Throughput: {throughput:.2f} t/s")
+        metrics = {
+            "duration_s": round(duration, 2),
+            "throughput_tps": round(throughput, 2),
+            "total_tokens": total_tokens
+        }
+
+        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'parsed': parsed_response}, indent=2)}")
 
         return {
             "message": {
@@ -325,11 +339,7 @@ class QwenService(BaseModelService):
                 "parsed": parsed_response
             },
             "usage": response['usage'],
-            "metrics": {
-                "duration_s": round(duration, 2),
-                "throughput_tps": round(throughput, 2),
-                "total_tokens": total_tokens
-            }
+            "metrics": metrics
         }
 
 class ServiceFactory:
