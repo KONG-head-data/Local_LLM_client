@@ -115,19 +115,11 @@ class GemmaService(BaseModelService):
                     enable_thinking=request.thinking
                 )
                 
-                grammar = None
-                if request.response_format and request.response_format.get("type") == "json_object":
-                    try:
-                        from llama_cpp.llama_chat_format import _grammar_for_response_format
-                        grammar = _grammar_for_response_format(request.response_format)
-                    except: pass
-
                 return llm.create_completion(
                     prompt=prompt,
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
                     top_p=request.top_p,
-                    grammar=grammar,
                     stop=self.get_stop_tokens()
                 )
 
@@ -273,19 +265,11 @@ class QwenService(BaseModelService):
                     enable_thinking=request.thinking
                 )
                 
-                grammar = None
-                if request.response_format and request.response_format.get("type") == "json_object":
-                    try:
-                        from llama_cpp.llama_chat_format import _grammar_for_response_format
-                        grammar = _grammar_for_response_format(request.response_format)
-                    except: pass
-
                 return llm.create_completion(
                     prompt=prompt,
                     max_tokens=request.max_tokens,
                     temperature=request.temperature,
                     top_p=request.top_p,
-                    grammar=grammar,
                     stop=self.get_stop_tokens()
                 )
 

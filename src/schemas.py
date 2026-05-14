@@ -10,7 +10,6 @@ class GenerateRequest(BaseModel):
     max_tokens: int = 512
     stream: bool = False
     thinking: bool = False
-    response_format: Optional[Dict[str, Any]] = None
 
 
 class ChatMessage(BaseModel):
@@ -29,7 +28,6 @@ class ChatRequest(BaseModel):
     max_tokens: int = 512
     stream: bool = False
     thinking: bool = False
-    response_format: Optional[Dict[str, Any]] = None
 
     def format_for_log(self) -> str:
         def indent(text, spaces):
@@ -69,6 +67,5 @@ class ChatRequest(BaseModel):
             f"    top_p={self.top_p},\n"
             f"    max_tokens={self.max_tokens},\n"
             f"    stream={self.stream},\n"
-            f"    response_format={self.response_format},\n"
             f")"
         )
