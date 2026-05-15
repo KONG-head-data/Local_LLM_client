@@ -15,9 +15,6 @@ class GenerateRequest(BaseModel):
 class ChatMessage(BaseModel):
     role: str
     content: Union[str, List[Dict[str, Any]]] # Support for multimodal content parts
-    tool_calls: Optional[List[Dict[str, Any]]] = None
-    tool_call_id: Optional[str] = None
-    name: Optional[str] = None # For tool response role
 
 
 class ChatRequest(BaseModel):
@@ -42,9 +39,6 @@ class ChatRequest(BaseModel):
                 f"ChatMessage(\n"
                 f'    role="{msg.role}",\n'
                 f'    content={content_val},\n'
-                f'    tool_calls={msg.tool_calls},\n'
-                f'    tool_call_id={msg.tool_call_id},\n'
-                f'    name={msg.name},\n'
                 f")"
             )
             msg_list.append(indent(m, 8).strip())

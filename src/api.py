@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pathlib import Path
 
-from .schemas import GenerateRequest, ChatRequest
+from .schemas import GenerateRequest, ChatRequest, ChatResponse
 from .config import logger, MODEL_TYPE
 from .services import ServiceFactory
 
@@ -14,7 +14,7 @@ router = APIRouter()
 project_root = str(Path(__file__).parent.parent)
 service = ServiceFactory.get_service(MODEL_TYPE, project_root)
 
-@router.post("/chat")
+@router.post("/chat", response_model=ChatResponse)
 async def chat(request: ChatRequest):
     try:
         logger.info(f"Chat Request: {request.format_for_log()}")

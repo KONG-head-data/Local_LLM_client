@@ -105,9 +105,6 @@ class GemmaService(BaseModelService):
             
         for m in request.messages:
             msg_dict = {"role": m.role, "content": m.content}
-            if m.tool_calls: msg_dict["tool_calls"] = m.tool_calls
-            if m.tool_call_id: msg_dict["tool_call_id"] = m.tool_call_id
-            if m.name: msg_dict["name"] = m.name
             messages.append(msg_dict)
 
         async def run_single_inference(msgs):
@@ -260,9 +257,6 @@ class QwenService(BaseModelService):
             
         for m in request.messages:
             msg_dict = {"role": m.role, "content": m.content}
-            if m.tool_calls: msg_dict["tool_calls"] = m.tool_calls
-            if m.tool_call_id: msg_dict["tool_call_id"] = m.tool_call_id
-            if m.name: msg_dict["name"] = m.name
             messages.append(msg_dict)
 
         async def run_single_inference(msgs):
