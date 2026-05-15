@@ -71,3 +71,22 @@ class ChatRequest(BaseModel):
             f"    stream={self.stream},\n"
             f")"
         )
+
+
+class ParsedMessage(BaseModel):
+    thinking: Optional[str] = None
+    tool_calls: Optional[List[Dict[str, Any]]] = None
+    content: Optional[str] = None
+
+
+class ChatMetrics(BaseModel):
+    duration_s: float
+    throughput_tps: float
+    total_tokens: int
+
+
+class ChatResponse(BaseModel):
+    message: Dict[str, str]
+    parsed_message: ParsedMessage
+    usage: Dict[str, int]
+    metrics: ChatMetrics

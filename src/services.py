@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 
 from .config import logger, MODEL_TYPE
 from .engine import get_engine
-from .schemas import ChatRequest
+from .schemas import ChatRequest, ChatResponse, ParsedMessage, ChatMetrics
 
 class BaseModelService(ABC):
     @abstractmethod
@@ -25,7 +25,7 @@ class BaseModelService(ABC):
         pass
 
     @abstractmethod
-    async def chat(self, request: ChatRequest) -> Union[Dict[str, Any], StreamingResponse]:
+    async def chat(self, request: ChatRequest) -> Union[ChatResponse, StreamingResponse]:
         pass
 
 class GemmaService(BaseModelService):
@@ -177,15 +177,15 @@ class GemmaService(BaseModelService):
 
         logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'parsed': parsed_response}, indent=2)}")
 
-        return {
-            "raw_message": {
+        return ChatResponse(
+            message={
                 "role": "assistant",
                 "content": content
             },
-            "parsed_message": parsed_response,
-            "usage": response['usage'],
-            "metrics": metrics
-        }
+            parsed_message=ParsedMessage(**parsed_response),
+            usage=response['usage'],
+            metrics=ChatMetrics(**metrics)
+        )
 
 class QwenService(BaseModelService):
     def __init__(self, template_path: str):
@@ -207,7 +207,7 @@ class QwenService(BaseModelService):
     def parse_response(self, text: str) -> Dict[str, Any]:
         # Extract Thinking
         thinking = ""
-        think_match = re.search(r'<think>(.*?)</think>', text, re.DOTALL)
+        think_match = re.search(r'(.*?)</think>', text, re.DOTALL)
         if think_match:
             thinking = think_match.group(1).strip()
         
@@ -332,15 +332,15 @@ class QwenService(BaseModelService):
 
         logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'parsed': parsed_response}, indent=2)}")
 
-        return {
-            "raw_message": {
+        return ChatResponse(
+            message={
                 "role": "assistant",
                 "content": content
             },
-            "parsed_message": parsed_response,
-            "usage": response['usage'],
-            "metrics": metrics
-        }
+            parsed_message=ParsedMessage(**parsed_response),
+            usage=response['usage'],
+            metrics=ChatMetrics(**metrics)
+        )
 
 class ServiceFactory:
     @staticmethod
