@@ -83,8 +83,8 @@ class GemmaService(BaseModelService):
 
         # Extract Final Content
         clean_content = text
-        clean_content = re.sub(r'<\|channel>.*?<channel\|>', '', clean_content, flags=re.DOTALL)
-        clean_content = re.sub(r'<\|tool_call\|?>(.*?)<tool_call\|>', '', clean_content, flags=re.DOTALL).strip()
+        #clean_content = re.sub(r'<\|channel>.*?<channel\|>', '', clean_content, flags=re.DOTALL)
+        #clean_content = re.sub(r'<\|tool_call\|?>(.*?)<tool_call\|>', '', clean_content, flags=re.DOTALL).strip()
 
         return {
             "thinking": thinking if thinking else None,
@@ -172,7 +172,7 @@ class GemmaService(BaseModelService):
             "total_tokens": total_tokens
         }
 
-        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'raw_output': content, 'parsed': parsed_response}, indent=2)}")
+        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics,'parsed': parsed_response}, indent=2)}")
 
         return ChatResponse(
             message={
@@ -235,8 +235,8 @@ class QwenService(BaseModelService):
 
         # Extract Final Content
         clean_content = text
-        clean_content = re.sub(r'<think>.*?</think>', '', clean_content, flags=re.DOTALL)
-        clean_content = re.sub(r'<tool_call>.*?</tool_call>', '', clean_content, flags=re.DOTALL).strip()
+        #clean_content = re.sub(r'<think>.*?</think>', '', clean_content, flags=re.DOTALL)
+        #clean_content = re.sub(r'<tool_call>.*?</tool_call>', '', clean_content, flags=re.DOTALL).strip()
 
         return {
             "thinking": thinking if thinking else None,
@@ -324,7 +324,7 @@ class QwenService(BaseModelService):
             "total_tokens": total_tokens
         }
 
-        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'raw_output': content, 'parsed': parsed_response}, indent=2)}")
+        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics,'parsed': parsed_response}, indent=2)}")
 
         return ChatResponse(
             message={
