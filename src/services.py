@@ -172,7 +172,7 @@ class GemmaService(BaseModelService):
             "total_tokens": total_tokens
         }
 
-        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'parsed': parsed_response}, indent=2)}")
+        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'raw_output': content, 'parsed': parsed_response}, indent=2)}")
 
         return ChatResponse(
             message={
@@ -324,7 +324,7 @@ class QwenService(BaseModelService):
             "total_tokens": total_tokens
         }
 
-        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'parsed': parsed_response}, indent=2)}")
+        logger.info(f"{self.__class__.__name__} chat result:\n{json.dumps({'metrics': metrics, 'raw_output': content, 'parsed': parsed_response}, indent=2)}")
 
         return ChatResponse(
             message={
