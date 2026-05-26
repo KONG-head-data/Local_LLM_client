@@ -11,4 +11,5 @@ dependencies = [
     "pydantic",
     "loguru>=0.7.3",
     "requests>=2.34.0",
+    "sse-starlette>=3.4.4",
 ]
