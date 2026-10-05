@@ -74,7 +74,8 @@ def test_selected_model_uses_its_own_template():
     assert "Qwen-3.5-4B/chat_template.jinja" in service.template_path
 
 
-def test_prepare_turn_and_context_limit():
+def test_prepare_turn_and_context_limit(monkeypatch):
+    monkeypatch.setattr(chat, "ENABLE_THINKING", False)
     model = FakeModel()
     history = [{"role": "user", "content": "Earlier"}]
     turn = chat.prepare_turn(model, FakeService(), history, "Now")
@@ -101,10 +102,16 @@ def test_prepare_turn_passes_thinking_setting_to_model_template(monkeypatch, mod
         return original_tokenize(text, add_bos, special)
 
     model.tokenize = capture_prompt
+    monkeypatch.setattr(chat, "THINKING_TOKEN_BUDGET", 1024)
 
     for enabled in (False, True):
         monkeypatch.setattr(chat, "ENABLE_THINKING", enabled)
-        chat.prepare_turn(model, service, [], "Hello")
+        turn = chat.prepare_turn(model, service, [], "Hello")
+        assert turn.messages == [{"role": "user", "content": "Hello"}]
+
+    guidance = "Aim to finish your thinking within 1024 tokens, then provide your final answer."
+    assert guidance not in prompts[0]
+    assert guidance in prompts[1]
 
     if model_name.startswith("Qwen"):
         assert prompts[0].endswith("<think>\n\n</think>\n\n")
