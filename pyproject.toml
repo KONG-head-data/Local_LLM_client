@@ -3,13 +3,18 @@ name = "local-llm-client"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
-    "llama-cpp-python",
+    "llama-cpp-python==0.3.36",
     "fastapi",
     "uvicorn",
     "pydantic",
     "loguru>=0.7.3",
     "requests>=2.34.0",
     "sse-starlette>=3.4.4",
+    "rich>=14.0.0",
 ]
+
+[tool.uv]
+no-binary-package = ["llama-cpp-python"]
+extra-build-variables = { llama-cpp-python = { CMAKE_ARGS = "-DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=86 -DGGML_NATIVE=OFF", CMAKE_BUILD_PARALLEL_LEVEL = "4" } }
