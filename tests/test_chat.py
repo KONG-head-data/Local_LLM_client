@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import chat
 import pytest
 from rich.console import Console
+from rich.live_render import LiveRender
 
 
 class FakeModel:
@@ -137,6 +138,45 @@ def test_streaming_stats_use_model_tokens_and_final_usage():
     assert model.calls[0]["prompt"] == [1, 2, 3]
     assert model.calls[0]["stream"] is True
     assert model.calls[0]["stop"] == ["<stop>"]
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "reply"),
+    [
+        (50, 10, "\n".join(f"line {index:02}" for index in range(30)) + "\nLATEST_MARKER"),
+        (30, 8, "long wrapped words " * 30 + "LATEST_MARKER"),
+    ],
+)
+def test_long_live_reply_shows_latest_text_and_stats(monkeypatch, width, height, reply):
+    class LongReplyModel(FakeModel):
+        def create_completion(self, **kwargs):
+            self.n_tokens = len(kwargs["prompt"]) + 300
+            yield {"choices": [{"text": reply, "finish_reason": "stop"}]}
+
+    class CapturingLive:
+        def __init__(self, renderable, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def update(self, renderable):
+            live_view = LiveRender(renderable)
+            visible.append("".join(segment.text for segment in console.render(live_view)))
+
+    console = Console(width=width, height=height, force_terminal=False)
+    visible = []
+    monkeypatch.setattr(chat, "Live", CapturingLive)
+
+    result = chat.generate_turn(LongReplyModel(), FakeService(), chat.Turn([], [1, 2, 3]), console)
+
+    assert result.text == reply
+    assert "LATEST_MARKER" in visible[-1]
+    assert "Generated: 300 tokens" in visible[-1]
+    assert len(visible[-1].splitlines()) <= height
 
 
 def test_full_context_waits_for_explicit_reset(monkeypatch):

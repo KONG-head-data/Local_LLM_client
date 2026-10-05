@@ -190,9 +190,19 @@ def decode_speed(tokens: int, elapsed_s: float) -> float:
     return max(tokens - 1, 0) / elapsed_s if elapsed_s > 0 else 0.0
 
 
-def render_live(text: str, generated: int, used: int, capacity: int, tps: float) -> Group:
+def render_live(text: str, generated: int, used: int, capacity: int, tps: float, console: Console) -> Group:
     stats = Text(f"Generated: {generated} tokens   Speed: {tps:.1f} tok/s   Context: {used:,}/{capacity:,}")
-    return Group(Panel(Text(text or "Waiting for first token…"), title="Assistant"), Panel(stats, title="Live stats"))
+    stats_panel = Panel(stats, title="Live stats")
+    stats_rows = len(console.render_lines(stats_panel))
+    reply_rows = max(console.height - stats_rows - 2, 1)
+    # Keep the live render within the terminal height. Rich otherwise crops its
+    # bottom, hiding the newest tokens and the stats as the reply grows.
+    source = (text or "Waiting for first token…")[-max(console.width * console.height * 2, 1):]
+    lines = Text(source).wrap(console, max(console.width - 4, 1), overflow="fold")
+    truncated = len(source) < len(text) or len(lines) > reply_rows
+    preview = "\n".join(line.plain for line in lines[-reply_rows:])
+    title = "Assistant (latest)" if truncated else "Assistant"
+    return Group(Panel(Text(preview), title=title), stats_panel)
 
 
 def generate_turn(
@@ -219,7 +229,7 @@ def generate_turn(
     )
     try:
         with Live(
-            render_live("", 0, prompt_count, context_size, 0.0),
+            render_live("", 0, prompt_count, context_size, 0.0, console),
             console=console,
             refresh_per_second=REFRESH_PER_SECOND,
             transient=True,
@@ -241,7 +251,7 @@ def generate_turn(
                     generated = final_usage["completion_tokens"]
                 elapsed = time.perf_counter() - first_token_at if first_token_at else 0.0
                 used = min(context_size, prompt_count + generated)
-                live.update(render_live("".join(pieces), generated, used, context_size, decode_speed(generated, elapsed)))
+                live.update(render_live("".join(pieces), generated, used, context_size, decode_speed(generated, elapsed), console))
     finally:
         close = getattr(stream, "close", None)
         if close:
