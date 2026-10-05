@@ -41,7 +41,7 @@ class FakeModel:
 
 
 class FakeService:
-    def render_prompt(self, messages):
+    def render_prompt(self, messages, enable_thinking=False):
         return "\n".join(message["content"] for message in messages)
 
     def get_stop_tokens(self):
@@ -84,6 +84,34 @@ def test_prepare_turn_and_context_limit():
     assert chat.fits_context(87, 100, 12)
     assert not chat.fits_context(88, 100, 12)
     assert history == [{"role": "user", "content": "Earlier"}]
+
+
+@pytest.mark.parametrize(
+    "model_name",
+    ["Qwen-3.5-4B", "Gemma"],
+)
+def test_prepare_turn_passes_thinking_setting_to_model_template(monkeypatch, model_name):
+    service = chat.service_for_model(chat.ROOT / "models" / model_name / f"{model_name}.gguf")
+    prompts = []
+    model = FakeModel()
+    original_tokenize = model.tokenize
+
+    def capture_prompt(text, add_bos, special):
+        prompts.append(text.decode("utf-8"))
+        return original_tokenize(text, add_bos, special)
+
+    model.tokenize = capture_prompt
+
+    for enabled in (False, True):
+        monkeypatch.setattr(chat, "ENABLE_THINKING", enabled)
+        chat.prepare_turn(model, service, [], "Hello")
+
+    if model_name.startswith("Qwen"):
+        assert prompts[0].endswith("<think>\n\n</think>\n\n")
+        assert prompts[1].endswith("<think>\n")
+    else:
+        assert "<|think|>" not in prompts[0]
+        assert "<|think|>" in prompts[1]
 
 
 def test_streaming_stats_use_model_tokens_and_final_usage():

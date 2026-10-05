@@ -31,7 +31,8 @@ N_BATCH = 64
 N_UBATCH = 64
 TEMPERATURE = 0.7
 TOP_P = 0.95
-MAX_NEW_TOKENS = 2048
+MAX_NEW_TOKENS = 8192
+ENABLE_THINKING = True
 REFRESH_PER_SECOND = 4
 
 ROOT = Path(__file__).resolve().parent
@@ -158,7 +159,7 @@ def prepare_turn(
     user_text: str,
 ) -> Turn:
     messages = [*history, {"role": "user", "content": user_text}]
-    prompt = service.render_prompt(messages)
+    prompt = service.render_prompt(messages, enable_thinking=ENABLE_THINKING)
     # Passing token IDs to create_completion ensures the preflight count is the
     # exact prompt sent to the model, including any model-required BOS token.
     prompt_tokens = llm.tokenize(prompt.encode("utf-8"), add_bos=True, special=True)
