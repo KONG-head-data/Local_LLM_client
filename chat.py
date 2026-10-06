@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 
 
 # Edit these settings to tune the terminal chat.
-N_CTX = 16_384
+N_CTX = 131072
 N_GPU_LAYERS = -1
 FLASH_ATTN = True
 N_BATCH = 64
@@ -190,8 +190,10 @@ def decode_speed(tokens: int, elapsed_s: float) -> float:
     return max(tokens - 1, 0) / elapsed_s if elapsed_s > 0 else 0.0
 
 
-def render_live(text: str, generated: int, used: int, capacity: int, tps: float, console: Console) -> Group:
-    stats = Text(f"Generated: {generated} tokens   Speed: {tps:.1f} tok/s   Context: {used:,}/{capacity:,}")
+def render_live(text: str, generated: int, context_tokens: int, capacity: int, tps: float, console: Console) -> Group:
+    stats = Text(
+        f"Generated: {generated} tokens   Context: {context_tokens:,}/{capacity:,}   Speed: {tps:.1f} tok/s"
+    )
     stats_panel = Panel(stats, title="Live stats")
     stats_rows = len(console.render_lines(stats_panel))
     reply_rows = max(console.height - stats_rows - 2, 1)
@@ -250,8 +252,7 @@ def generate_turn(
                 if final_usage:
                     generated = final_usage["completion_tokens"]
                 elapsed = time.perf_counter() - first_token_at if first_token_at else 0.0
-                used = min(context_size, prompt_count + generated)
-                live.update(render_live("".join(pieces), generated, used, context_size, decode_speed(generated, elapsed), console))
+                live.update(render_live("".join(pieces), generated, prompt_count, context_size, decode_speed(generated, elapsed), console))
     finally:
         close = getattr(stream, "close", None)
         if close:
@@ -266,7 +267,7 @@ def generate_turn(
         completion_tokens=completion_count,
         elapsed_s=elapsed,
         decode_tps=decode_speed(completion_count, elapsed),
-        context_used=min(context_size, prompt_count + completion_count),
+        context_used=prompt_count,
         finish_reason=finish_reason,
     )
 
@@ -314,8 +315,9 @@ def run_chat(llm: Llama, service: BaseModelService, console: Console) -> None:
         history = [*turn.messages, {"role": "assistant", "content": result.text}]
         console.print(Panel(Text(result.text or "(empty reply)"), title="Assistant"))
         console.print(
-            f"[dim]{result.completion_tokens} output tokens · {result.decode_tps:.1f} tok/s · "
-            f"context {result.context_used:,}/{llm.n_ctx():,} · "
+            f"[dim]Generated: {result.completion_tokens} tokens · "
+            f"Context: {result.context_used:,}/{llm.n_ctx():,} · "
+            f"{result.decode_tps:.1f} tok/s · "
             f"decode {result.elapsed_s:.2f}s[/]"
         )
         if result.finish_reason == "length":

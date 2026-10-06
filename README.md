@@ -9,7 +9,7 @@ uv sync
 uv run python chat.py
 ```
 
-Choose a GGUF model with the arrow keys and Enter. Type messages to chat, `/reset` to clear the conversation, or `/exit` to quit. A live panel shows generated tokens per second and the context used out of the configured limit. The final line for each reply shows its output token count and decode speed. The context count includes the current prompt and generated reply; it is recalculated for each turn.
+Choose a GGUF model with the arrow keys and Enter. Type messages to chat, `/reset` to clear the conversation, or `/exit` to quit. The live panel and final line show two separate token counts: `Context` is the prompt sent at the start of the turn, and `Generated` is the new reply. Context is recalculated for each turn and does not include the current reply's generated tokens.
 
 Edit the constants near the top of `chat.py` to change the context size, GPU offload, batch sizes, sampling, or maximum reply length. `ENABLE_THINKING = True` requests reasoning from a model whose chat template supports it, and `THINKING_TOKEN_BUDGET = 1024` asks the model to finish thinking within roughly that many tokens. This budget is guidance, not an enforced cutoff; `MAX_NEW_TOKENS` remains the hard limit for the whole reply. The terminal displays any reasoning the model emits as part of its raw reply. `uv sync` builds `llama-cpp-python` with CUDA for the RTX 3060 (compute capability 8.6), so the CUDA toolkit and NVIDIA driver must be installed. Chat checks that the CUDA backend and an NVIDIA GPU are visible before loading a model; if you intentionally want CPU mode, set `N_GPU_LAYERS = 0`. If the full prompt plus reserved reply tokens will not fit, the chat waits for `/reset` instead of dropping earlier messages.
 

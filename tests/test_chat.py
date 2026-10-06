@@ -132,7 +132,7 @@ def test_streaming_stats_use_model_tokens_and_final_usage():
     assert result.text == "Hello there"
     assert result.prompt_tokens == 3
     assert result.completion_tokens == 6
-    assert result.context_used == 9
+    assert result.context_used == 3
     assert result.finish_reason == "stop"
     assert result.decode_tps >= 0
     assert model.calls[0]["prompt"] == [1, 2, 3]
@@ -176,6 +176,7 @@ def test_long_live_reply_shows_latest_text_and_stats(monkeypatch, width, height,
     assert result.text == reply
     assert "LATEST_MARKER" in visible[-1]
     assert "Generated: 300 tokens" in visible[-1]
+    assert "Context: 3/100" in visible[-1]
     assert len(visible[-1].splitlines()) <= height
 
 
