@@ -37,7 +37,7 @@ For a local Transformers checkpoint with `config.json`, tokenizer files, and com
 `.safetensors` weights under `models/`, run:
 
 ```bash
-uv run --with torch --with 'transformers>=5.17' --with accelerate python scripts/torch_chat.py
+uv run python scripts/torch_chat.py
 ```
 
 Choose a model folder, then chat with `/reset` and `/exit` as in `chat.py`.
