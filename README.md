@@ -48,3 +48,28 @@ length, and thinking request. It loads local files only and uses Transformers'
 automatic device placement; the reported device map shows whether layers are on
 CUDA or CPU. Install a CUDA-enabled PyTorch build appropriate for your driver if
 you want GPU execution.
+
+## TensorRT-LLM environment
+
+TensorRT-LLM 0.21.0 is installed in `.venv-tensorrt-llm/` on DRIVE_A. This
+version's support matrix includes the RTX 3060's SM 8.6 architecture. The
+separate environment keeps its PyTorch and CUDA Python versions independent of
+the project's regular `.venv`.
+
+To recreate it, run from the project directory:
+
+```bash
+uv venv .venv-tensorrt-llm --python 3.12
+UV_CACHE_DIR=/mnt/DRIVE_A/UV_CACHE_DIR uv pip install \
+  --python .venv-tensorrt-llm/bin/python \
+  -r requirements-tensorrt-llm.txt
+```
+
+Verify the installation and GPU visibility with:
+
+```bash
+.venv-tensorrt-llm/bin/python -c 'import torch, tensorrt_llm; print(tensorrt_llm.__version__, torch.cuda.get_device_name(0))'
+```
+
+Use this interpreter for TensorRT-LLM scripts. TensorRT-LLM takes supported
+Hugging Face model checkpoints; the GGUF terminal chat uses `chat.py`.
