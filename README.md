@@ -31,6 +31,45 @@ Edit the constants near the top of `chat.py` to change the context size, GPU off
 
 The existing `./start.sh` command still starts the local HTTP server.
 
+## NLLB GGUF terminal translator
+
+`scripts/translator.py` uses the local NLLB-200 Q4_K_M model at
+`models/NLLB-200-distil-600M/nllb-200-distilled-600M-q4_k_m.gguf`. This file
+uses the [Malaga](https://github.com/rzafiamy/malaga) GGUF layout and cannot be
+loaded by this project's `llama-cpp-python` build. A CUDA-enabled Malaga binary
+is installed at `build/malaga` in this workspace (the `build/` folder is ignored
+by Git). To rebuild it, install Rust and the CUDA toolkit, then run from this
+project's root:
+
+```bash
+git clone https://github.com/rzafiamy/malaga /tmp/malaga
+(cd /tmp/malaga && CUDA_COMPUTE_CAP=86 ./build.sh --cuda)
+mkdir -p build
+cp /tmp/malaga/target/release/malaga build/malaga
+```
+
+For a binary elsewhere, set `MALAGA_BIN` to its path. Start the translator with:
+
+```bash
+uv run python scripts/translator.py
+```
+
+If the executable is already on `PATH` as `malaga`, no copy or environment
+variable is needed. The translator requests CUDA by default and reports the
+device Malaga actually loaded. A CUDA build and a working NVIDIA driver are
+required. Set `MALAGA_DEVICE=cpu` only when you intentionally want CPU mode;
+the script will not silently fall back from its default CUDA request.
+
+At startup, choose source and target NLLB language codes (Enter defaults to
+`eng_Latn` and `vie_Latn`; `?` lists available codes). Enter text to translate,
+`/pair` to change languages, or `/exit` to quit. The script starts a local
+Malaga server, waits until its model is ready, and stops that server when you
+leave. Each translation is independent; earlier text is not sent as context.
+The final line shows input and output **text** token counts calculated from the
+GGUF's embedded tokenizer, plus wall time and estimated output tokens per
+second. These counts exclude internal language/EOS tokens; Malaga returns each
+translation as a complete response, so there is no live token stream.
+
 ## Safetensors terminal chat
 
 For a local Transformers checkpoint with `config.json`, tokenizer files, and complete

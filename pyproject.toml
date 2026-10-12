@@ -13,6 +13,7 @@ dependencies = [
     "requests>=2.34.0",
     "sse-starlette>=3.4.4",
     "rich>=14.0.0",
+    "tokenizers>=0.23.0",
     "transformers>=5.18.0",
     "torch==2.14.0+cu132",
     "accelerate>=1.15.0",

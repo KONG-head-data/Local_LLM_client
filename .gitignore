@@ -9,5 +9,6 @@ wheels/
 # Virtual environments
 .venv
 .venv-tensorrt-llm/
-models
 test_prompt
+*.gguf
+*.safetensors*
